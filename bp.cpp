@@ -34,7 +34,7 @@ public:
 		this->history = (this->history << 1) | (taken ? 1 : 0);
 	}
 
-	uint32_t get_history(){
+	uint32_t get_history() {
 		return this->history;
 	}
 };
@@ -75,18 +75,22 @@ public:
  ************************************************************************/
 int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize, unsigned fsmState,
 			bool isGlobalHist, bool isGlobalTable, int Shared) {
+	// TODO: Complete implementation
 	return -1;
 }
 
 bool BP_predict(uint32_t pc, uint32_t *dst) {
+	// TODO: Complete implementation
 	return false;
 }
 
 void BP_update(uint32_t pc, uint32_t targetPc, bool taken, uint32_t pred_dst) {
+	// TODO: Complete implementation
 	return;
 }
 
 void BP_GetStats(SIM_stats *curStats) {
+	// TODO: Complete implementation
 	return;
 }
 
@@ -105,5 +109,3 @@ BTB::BTB(unsigned btbSize, unsigned historySize, unsigned tagSize, unsigned fsmS
 	this->targetPcList = new uint32_t[btbSize];
 	this->historyList = new History[btbSize];
 }
-
-
