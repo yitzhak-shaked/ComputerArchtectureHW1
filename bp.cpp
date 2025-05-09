@@ -189,18 +189,16 @@ unsigned gBranchCounter = 0;
 /******************************************************************************
  * Helper Functions
  *****************************************************************************/
-uint32_t get_bits(uint32_t value, unsigned start, unsigned end) {  // TODO: Validate
+uint32_t get_bits(uint32_t value, unsigned start, unsigned end) {
 	// Get bits from start to end (inclusive)
 	if (start > end || start < 0 || end >= 32) {
 		cerr << "Error: get_bits recieved an invalid bit range" << endl;
 		return 0;
 	}
 	// printf("\nget_bits(%u, %u, %u)\n", value, start, end); // TODO: Remove
-	// uint32_t mask = ((1u << (end - start + 1)) - 1) << start;
-	uint32_t mask = 1u << (end - start + 1);
-	if (start > 0) {
-		mask = (mask - 1) << (start - 1);
-	}
+	uint32_t mask;
+	mask = (1u << (end - start + 1u)) - 1u;
+	mask = mask << start;
 
 	
 	// printf("value: 0b%s\n", std::bitset<32>(value).to_string().c_str()); // TODO: Remove
@@ -331,7 +329,7 @@ void BTBEntry::update_fsm(int fsmIndex, bool taken) { this->fsmVec[fsmIndex].upd
 void BTBEntry::recreate_entry(uint32_t tag, uint32_t targetPc) {
 	this->tag = tag;
 	this->targetPc = targetPc;
-	this->history = History();
+	this->history = History(globalBTB.get_historySize());
 	for (unsigned i = 0; i < FSM_VECTOR_MAX_SIZE; ++i) {
 		this->fsmVec[i].set_fsmState(gInitalFsmState);
 	}
@@ -460,25 +458,25 @@ void BTB::update_BTB_entry(uint32_t tag, uint32_t pc, uint32_t targetPc, bool ta
 void test_history() {
 	History history(3);
 	cout << " History size: 3" << endl;
-	cout << "History initial state: " << history.get_history() << endl;
+	cout << "History initial state: " << bitset<32>(history.get_history()) << endl;
 	history.update_history(true);
-	cout << "Step 1 - push 1 - History: " << history.get_history() << endl;
+	cout << "Step 1 - push 1 - History: " << bitset<32>(history.get_history()) << endl;
 	history.update_history(true);
-	cout << "Step 2 - push 0 - History: " << history.get_history() << endl;
+	cout << "Step 2 - push 0 - History: " << bitset<32>(history.get_history()) << endl;
 	history.update_history(true);
-	cout << "Step 3 - push 1 - History: " << history.get_history() << endl;
+	cout << "Step 3 - push 1 - History: " << bitset<32>(history.get_history()) << endl;
 	history.update_history(true);
-	cout << "Step 4 - push 1 - History: " << history.get_history() << endl;
+	cout << "Step 4 - push 1 - History: " << bitset<32>(history.get_history()) << endl;
 	history.update_history(false);
-	cout << "Step 5 - push 0 - History: " << history.get_history() << endl;
+	cout << "Step 5 - push 0 - History: " << bitset<32>(history.get_history()) << endl;
 	history.update_history(true);
-	cout << "Step 6 - push 1 - History: " << history.get_history() << endl;
+	cout << "Step 6 - push 1 - History: " << bitset<32>(history.get_history()) << endl;
 	history.update_history(false);
-	cout << "Step 7 - push 0 - History: " << history.get_history() << endl;
+	cout << "Step 7 - push 0 - History: " << bitset<32>(history.get_history()) << endl;
 	history.update_history(false);
-	cout << "Step 8 - push 0 - History: " << history.get_history() << endl;
+	cout << "Step 8 - push 0 - History: " << bitset<32>(history.get_history()) << endl;
 	history.update_history(true);
-	cout << "Step 9 - push 1 - History: " << history.get_history() << endl;
+	cout << "Step 9 - push 1 - History: " << bitset<32>(history.get_history()) << endl;
 }
 
 void test_fsm() {
@@ -529,14 +527,17 @@ void test_log2() {
 }
 
 void test_get_bits() {
-	cout << "get_bits(0b11111111, 0, 7) = " << bitset<8>(get_bits(0b11111111, 0, 7)) << endl;
-	cout << "get_bits(0b11111111, 1, 6) = " << bitset<8>(get_bits(0b11111111, 1, 6)) << endl;
-	cout << "get_bits(0b11111111, 2, 5) = " << bitset<8>(get_bits(0b11111111, 2, 5)) << endl;
-	cout << "get_bits(0b11111111, 3, 4) = " << bitset<8>(get_bits(0b11111111, 3, 4)) << endl;
-	cout << "get_bits(0b11111111, 4, 3) = " << bitset<8>(get_bits(0b11111111, 4, 3)) << endl;
-	cout << "get_bits(0b11001100, 4, 4) = " << bitset<8>(get_bits(0b11001100, 4, 4)) << endl;
-	cout << "get_bits(0b11001100, 3, 3) = " << bitset<8>(get_bits(0b11001100, 3, 3)) << endl;
-	cout << "get_bits(0b11001100, 2, 6) = " << bitset<8>(get_bits(0b11001100, 2, 5)) << endl;
+	// cout << "get_bits(0b11111111, 0, 7) = " << bitset<8>(get_bits(0b11111111, 0, 7)) << endl;
+	// cout << "get_bits(0b11111111, 1, 6) = " << bitset<8>(get_bits(0b11111111, 1, 6)) << endl;
+	// cout << "get_bits(0b11111111, 2, 5) = " << bitset<8>(get_bits(0b11111111, 2, 5)) << endl;
+	// cout << "get_bits(0b11111111, 3, 4) = " << bitset<8>(get_bits(0b11111111, 3, 4)) << endl;
+	// cout << "get_bits(0b11111111, 4, 3) = " << bitset<8>(get_bits(0b11111111, 4, 3)) << endl;
+	// cout << "get_bits(0b11001100, 4, 4) = " << bitset<8>(get_bits(0b11001100, 4, 4)) << endl;
+	// cout << "get_bits(0b11001100, 3, 3) = " << bitset<8>(get_bits(0b11001100, 3, 3)) << endl;
+	cout << "get_bits(0b11001100, 2, 6) = " << bitset<8>(get_bits(0b11001100, 2, 6)) << endl;
+	cout << "get_bits(0b11001100, 2, 7) = " << bitset<8>(get_bits(0b11001100, 2, 7)) << endl;
+	cout << "get_bits(0b11001100, 0, 4) = " << bitset<8>(get_bits(0b11001100, 0, 4)) << endl;
+	cout << "get_bits(0b11001100, 0, 3) = " << bitset<8>(get_bits(0b11001100, 0, 3)) << endl;
 }
 
 void test_calculate_tag() {
@@ -549,7 +550,7 @@ void test_calculate_tag() {
 /******************************************************************************
  * Main Function for Testing
  *****************************************************************************/
-int main() {
+int _main() {
 	// test_history();
 	// test_fsm();
 	// test_power();

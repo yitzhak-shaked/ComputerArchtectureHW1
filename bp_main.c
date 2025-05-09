@@ -9,13 +9,13 @@
 
 #include "bp_api.h"
 
-int _main(int argc, char **argv) {
+int main(int argc, char **argv) {
 	/**
 	 * Temporery addition for Debugging:
 	 */
-	argv[1] = "input_examples/example2.trc";
-	argc = 2;
-	printf("Running with %s\n", argv[1]);
+	// argv[1] = "input_examples/example3.trc";
+	// argc = 2;
+	// printf("Running with %s\n", argv[1]);
 	 /**
 	  * TODO: Remove this part
 	  */
