@@ -1,0 +1,18 @@
+// .vscode/launch.json
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug bp_main",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/bp_main",
+            "args": ["input_examples/example1.trc"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb"
+        }
+    ]
+}

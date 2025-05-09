@@ -1,0 +1,9 @@
+{
+    "makefile.launchConfigurations": [
+        {
+            "cwd": "/home/shaked/projects/ComputerArchitectureHW1",
+            "binaryPath": "/home/shaked/projects/ComputerArchitectureHW1/bp_main",
+            "binaryArgs": []
+        }
+    ]
+}

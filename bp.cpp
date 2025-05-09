@@ -11,7 +11,7 @@
 /******************************************************************************
  * Constants
  *****************************************************************************/
-const unsigned FSM_SIZE = 2; // Size of the FSM
+const unsigned FSM_SIZE = 4; // Size of the FSM
 const unsigned FSM_VECTOR_MAX_SIZE = 256; // Maximum size of the FSM
 const unsigned MAX_BTB_SIZE = 32;
 const unsigned MAX_HISTORY_SIZE = 8;
@@ -35,6 +35,13 @@ class FSM;
 class BTBEntry;
 class BTB;
 
+/******************************************************************************
+ * Helper Functions declarations
+ *****************************************************************************/
+uint32_t get_bits(uint32_t value, unsigned start, unsigned end);
+int log2(int x);
+uint32_t calculate_tag(uint32_t pc);
+int power(int base, int exp);
 
 /******************************************************************************
  * Class Declarations
@@ -53,7 +60,7 @@ public:
 	}
 
 	// Setters and Getters
-	uint32_t get_history() const { return this->history; }
+	uint32_t get_history() const { return get_bits(this->history, 0, this->historySize-1); }
 	// void set_history_size(unsigned historySize) { this->historySize = historySize; }
 
 	// Operator=
@@ -174,6 +181,7 @@ bool gIsGlobalHist = false;
 bool gIsGlobalTable = false;
 int gXORMethod = 0;
 
+bool lastTaken = false;
 unsigned gFlushCounter = 0;
 unsigned gBranchCounter = 0;
 
@@ -183,7 +191,21 @@ unsigned gBranchCounter = 0;
  *****************************************************************************/
 uint32_t get_bits(uint32_t value, unsigned start, unsigned end) {  // TODO: Validate
 	// Get bits from start to end (inclusive)
-	uint32_t mask = ((1 << (end - start + 1)) - 1) << start;
+	if (start > end || start < 0 || end >= 32) {
+		cerr << "Error: get_bits recieved an invalid bit range" << endl;
+		return 0;
+	}
+	// printf("\nget_bits(%u, %u, %u)\n", value, start, end); // TODO: Remove
+	// uint32_t mask = ((1u << (end - start + 1)) - 1) << start;
+	uint32_t mask = 1u << (end - start + 1);
+	if (start > 0) {
+		mask = (mask - 1) << (start - 1);
+	}
+
+	
+	// printf("value: 0b%s\n", std::bitset<32>(value).to_string().c_str()); // TODO: Remove
+	// printf("Mask: 0b%s\n", std::bitset<32>(mask).to_string().c_str());
+	// printf("result: 0b%s\n", std::bitset<32>((value & mask) >> start).to_string().c_str());
 	return (value & mask) >> start;
 }
 
@@ -197,13 +219,21 @@ int log2(int x) {
 }
 
 uint32_t calculate_tag(uint32_t pc) {
-	int start = 2 + log2(globalBTB.get_btbSize());
-	return get_bits(pc, start, start + globalBTB.get_tagSize() - 1);
+	unsigned start = 2 + log2(globalBTB.get_btbSize());
+	return get_bits(pc, start, start + globalBTB.get_tagSize() - 2);
 }
 
+int power(int base, int exp) {
+	int result = 1;
+	for (int i = 0; i < exp; ++i) {
+		result *= base;
+	}
+	return result;
+}
  /*****************************************************************************
  * Target Functions
  *****************************************************************************/
+
 int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize, unsigned fsmState,
 			bool isGlobalHist, bool isGlobalTable, int Shared) {
 	// Initialize global variables
@@ -215,11 +245,11 @@ int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize, unsigned f
 	// Initialize the BTB
 	// globalBTB = new BTB(btbSize, historySize, tagSize, fsmState);
 	globalBTB = BTB(btbSize, historySize, tagSize, fsmState);
+	globalHistory = History(historySize);
 
-	if (isGlobalHist) {
+	// if (isGlobalHist) {
 		// globalHistory = new History(historySize);
-		globalHistory = History(historySize);
-	}
+	// }
 
 	if (isGlobalTable) {
 		for (unsigned i = 0; i < btbSize; ++i) {
@@ -229,17 +259,19 @@ int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize, unsigned f
 		}
 	}
 
-	return -1;
+	return 0;
 }
 
 bool BP_predict(uint32_t pc, uint32_t *dst) {
-	return globalBTB.get_BTB_entry_prediction(calculate_tag(pc), pc, dst);
+	lastTaken = globalBTB.get_BTB_entry_prediction(calculate_tag(pc), pc, dst);
+	return lastTaken;
 }
 
 void BP_update(uint32_t pc, uint32_t targetPc, bool taken, uint32_t pred_dst) {
 	// Update stats
 	gBranchCounter++;
-	if (pred_dst != targetPc) {
+	// if (pred_dst != targetPc) {
+	if (taken != lastTaken) {
 		gFlushCounter++;
 	}
 	// Update the BTB
@@ -250,16 +282,16 @@ void BP_GetStats(SIM_stats *curStats) {
 	// Update the stats
 	curStats->flush_num = gFlushCounter;
 	curStats->br_num = gBranchCounter;
-	curStats->size = globalBTB.get_btbSize() * (globalBTB.get_tagSize() + 32);
+	curStats->size = globalBTB.get_btbSize() * (log2(globalBTB.get_btbSize()) +  globalBTB.get_tagSize() + 30);
 	if (gIsGlobalHist) {
 		curStats->size += globalBTB.get_historySize();
 	} else {
 		curStats->size += globalBTB.get_historySize() * globalBTB.get_btbSize();
 	}
 	if (gIsGlobalTable) {
-		curStats->size += globalBTB.get_btbSize() * FSM_SIZE;
+		curStats->size += 2 * power(2, globalBTB.get_historySize());
 	} else {
-		curStats->size += globalBTB.get_btbSize() * globalBTB.get_historySize() * FSM_SIZE;
+		curStats->size += globalBTB.get_btbSize() * 2 * power(2, globalBTB.get_historySize());
 	}
 }
 
@@ -338,7 +370,7 @@ BTB& BTB::operator=(const BTB& other) {
 
 bool BTB::get_BTB_entry_prediction(uint32_t tag, uint32_t pc, uint32_t *dst) {
 	// Direct access to the BTB entry
-	BTBEntry &entry = btbEntries[get_bits(pc, 0, log2(btbSize) - 1)];
+	BTBEntry &entry = btbEntries[get_bits(pc, 2, 2 + log2(btbSize) - 1)];
 
 	// If the entry exists, return its prediction
 	// TOASK: What if both tag and LSB bits are the same for two different branches?
@@ -351,11 +383,11 @@ bool BTB::get_BTB_entry_prediction(uint32_t tag, uint32_t pc, uint32_t *dst) {
 					break;
 				
 				case 1: // Using XOR on LSB (from the third bit)
-					fsmIndex ^= get_bits(pc, 3, 3 + this->get_historySize() - 1);
+					fsmIndex ^= get_bits(pc, 2, 2 + this->get_historySize() - 1);
 					break;
 			
 				case 2: // Using XOR on mid (from the 17h bit)
-					fsmIndex ^= get_bits(pc, 17, 17 + this->get_historySize() - 1);
+					fsmIndex ^= get_bits(pc, 16, 16 + this->get_historySize() - 1);
 					break;
 				
 				default:
@@ -379,18 +411,11 @@ bool BTB::get_BTB_entry_prediction(uint32_t tag, uint32_t pc, uint32_t *dst) {
 
 void BTB::update_BTB_entry(uint32_t tag, uint32_t pc, uint32_t targetPc, bool taken) {
 	// Direct access to the BTB entry
-	BTBEntry &entry = btbEntries[get_bits(pc, 0, log2(btbSize) - 1)];
+	BTBEntry &entry = btbEntries[get_bits(pc, 2, 2 + log2(btbSize) - 1)];
 	
 	// If the entry does not exists create a new one
 	if (entry.get_tag() != tag) {
 		entry.recreate_entry(tag, targetPc);
-	}
-	
-	// Update History
-	if (gIsGlobalHist) {
-		globalHistory.update_history(taken);
-	} else {
-		entry.update_history(taken);
 	}
 	
 	// Update the FSM state
@@ -398,25 +423,32 @@ void BTB::update_BTB_entry(uint32_t tag, uint32_t pc, uint32_t targetPc, bool ta
 	if (gIsGlobalHist) {
 		switch (gXORMethod) {
 			case 0: // Not using XOR
-				break;
+			break;
 			
 			case 1: // Using XOR on LSB (from the third bit)
-				fsmIndex ^= get_bits(pc, 3, 3 + this->get_historySize() - 1);
-				break;
-		
+			fsmIndex ^= get_bits(pc, 2, 2 + this->get_historySize() - 1);
+			break;
+			
 			case 2: // Using XOR on mid (from the 17h bit)
-				fsmIndex ^= get_bits(pc, 17, 17 + this->get_historySize() - 1);
-				break;
+			fsmIndex ^= get_bits(pc, 16, 16 + this->get_historySize() - 1);
+			break;
 			
 			default:
-				cerr << "Invalid Shared value: " << gXORMethod << endl;
-				break;
+			cerr << "Invalid Shared value: " << gXORMethod << endl;
+			break;
 		}
 	}
 	if (gIsGlobalTable) {
 		globalFSMVector[fsmIndex].update_fsm(taken);
 	} else {
 		entry.update_fsm(fsmIndex, taken);
+	}
+	
+	// Update History
+	if (gIsGlobalHist) {
+		globalHistory.update_history(taken);
+	} else {
+		entry.update_history(taken);
 	}
 }
 
@@ -426,34 +458,117 @@ void BTB::update_BTB_entry(uint32_t tag, uint32_t pc, uint32_t targetPc, bool ta
  * Test Functions
  *****************************************************************************/
 void test_history() {
-	History history(4);
-	cout << "History initial state: " << bitset<4>(history.get_history()) << endl;
+	History history(3);
+	cout << " History size: 3" << endl;
+	cout << "History initial state: " << history.get_history() << endl;
 	history.update_history(true);
-	cout << "Step 1 - push 1 - History: " << bitset<4>(history.get_history()) << endl;
+	cout << "Step 1 - push 1 - History: " << history.get_history() << endl;
+	history.update_history(true);
+	cout << "Step 2 - push 0 - History: " << history.get_history() << endl;
+	history.update_history(true);
+	cout << "Step 3 - push 1 - History: " << history.get_history() << endl;
+	history.update_history(true);
+	cout << "Step 4 - push 1 - History: " << history.get_history() << endl;
 	history.update_history(false);
-	cout << "Step 2 - push 0 - History: " << bitset<4>(history.get_history()) << endl;
+	cout << "Step 5 - push 0 - History: " << history.get_history() << endl;
 	history.update_history(true);
-	cout << "Step 3 - push 1 - History: " << bitset<4>(history.get_history()) << endl;
-	history.update_history(true);
-	cout << "Step 4 - push 1 - History: " << bitset<4>(history.get_history()) << endl;
+	cout << "Step 6 - push 1 - History: " << history.get_history() << endl;
 	history.update_history(false);
-	cout << "Step 5 - push 0 - History: " << bitset<4>(history.get_history()) << endl;
-	history.update_history(true);
-	cout << "Step 6 - push 1 - History: " << bitset<4>(history.get_history()) << endl;
+	cout << "Step 7 - push 0 - History: " << history.get_history() << endl;
 	history.update_history(false);
-	cout << "Step 7 - push 0 - History: " << bitset<4>(history.get_history()) << endl;
-	history.update_history(false);
-	cout << "Step 8 - push 0 - History: " << bitset<4>(history.get_history()) << endl;
+	cout << "Step 8 - push 0 - History: " << history.get_history() << endl;
 	history.update_history(true);
-	cout << "Step 9 - push 1 - History: " << bitset<4>(history.get_history()) << endl;
+	cout << "Step 9 - push 1 - History: " << history.get_history() << endl;
 }
 
+void test_fsm() {
+	FSM fsm(2, 4);
+	cout << "FSM initial state: " << fsm.get_fsmState() << " - Taken: " << fsm.get_fsmIsTaken() << endl;
+	fsm.update_fsm(true);
+	cout << "Step 1 - push 1 - FSM: " << fsm.get_fsmState() << " - Taken: " << fsm.get_fsmIsTaken() << endl;
+	fsm.update_fsm(false);
+	cout << "Step 2 - push 0 - FSM: " << fsm.get_fsmState() << " - Taken: " << fsm.get_fsmIsTaken() << endl;
+	fsm.update_fsm(false);
+	cout << "Step 3 - push 0 - FSM: " << fsm.get_fsmState() << " - Taken: " << fsm.get_fsmIsTaken() << endl;
+	fsm.update_fsm(false);
+	cout << "Step 4 - push 0 - FSM: " << fsm.get_fsmState() << " - Taken: " << fsm.get_fsmIsTaken() << endl;
+	fsm.update_fsm(false);
+	cout << "Step 5 - push 0 - FSM: " << fsm.get_fsmState() << " - Taken: " << fsm.get_fsmIsTaken() << endl;
+	fsm.update_fsm(true);
+	cout << "Step 6 - push 1 - FSM: " << fsm.get_fsmState() << " - Taken: " << fsm.get_fsmIsTaken() << endl;
+	fsm.update_fsm(true);
+	cout << "Step 7 - push 1 - FSM: " << fsm.get_fsmState() << " - Taken: " << fsm.get_fsmIsTaken() << endl;
+	fsm.update_fsm(true);
+	cout << "Step 8 - push 1 - FSM: " << fsm.get_fsmState() << " - Taken: " << fsm.get_fsmIsTaken() << endl;
+	fsm.update_fsm(false);
+	cout << "Step 9 - push 0 - FSM: " << fsm.get_fsmState() << " - Taken: " << fsm.get_fsmIsTaken() << endl;
+	fsm.update_fsm(true);
+	cout << "Step 10 - push 1 - FSM: " << fsm.get_fsmState() << " - Taken: " << fsm.get_fsmIsTaken() << endl;
+	fsm.update_fsm(true);
+	cout << "Step 11 - push 1 - FSM: " << fsm.get_fsmState() << " - Taken: " << fsm.get_fsmIsTaken() << endl;
+}
+
+void test_power() {
+	cout << "Power(2, 3) = " << power(2, 3) << endl;
+	cout << "Power(2, 4) = " << power(2, 4) << endl;
+	cout << "Power(2, 5) = " << power(2, 5) << endl;
+	cout << "Power(3, 3) = " << power(3, 3) << endl;
+	cout << "Power(4, 4) = " << power(4, 4) << endl;
+	cout << "Power(5, 5) = " << power(5, 5) << endl;
+}
+
+void test_log2() {
+	cout << "log2(1) = " << log2(1) << endl;
+	cout << "log2(2) = " << log2(2) << endl;
+	cout << "log2(3) = " << log2(3) << endl;
+	cout << "log2(4) = " << log2(4) << endl;
+	cout << "log2(5) = " << log2(5) << endl;
+	cout << "log2(6) = " << log2(6) << endl;
+	cout << "log2(7) = " << log2(7) << endl;
+	cout << "log2(8) = " << log2(8) << endl;
+}
+
+void test_get_bits() {
+	cout << "get_bits(0b11111111, 0, 7) = " << bitset<8>(get_bits(0b11111111, 0, 7)) << endl;
+	cout << "get_bits(0b11111111, 1, 6) = " << bitset<8>(get_bits(0b11111111, 1, 6)) << endl;
+	cout << "get_bits(0b11111111, 2, 5) = " << bitset<8>(get_bits(0b11111111, 2, 5)) << endl;
+	cout << "get_bits(0b11111111, 3, 4) = " << bitset<8>(get_bits(0b11111111, 3, 4)) << endl;
+	cout << "get_bits(0b11111111, 4, 3) = " << bitset<8>(get_bits(0b11111111, 4, 3)) << endl;
+	cout << "get_bits(0b11001100, 4, 4) = " << bitset<8>(get_bits(0b11001100, 4, 4)) << endl;
+	cout << "get_bits(0b11001100, 3, 3) = " << bitset<8>(get_bits(0b11001100, 3, 3)) << endl;
+	cout << "get_bits(0b11001100, 2, 6) = " << bitset<8>(get_bits(0b11001100, 2, 5)) << endl;
+}
+
+void test_calculate_tag() {
+	globalBTB = BTB(4, 4, 3, 4);
+	cout << "calculate_tag(0b00110011) = " << bitset<8>(calculate_tag(0b00110011)) << endl;
+	cout << "calculate_tag(0b11111111) = " << bitset<8>(calculate_tag(0b11111111)) << endl;
+	cout << "calculate_tag(0b01010101) = " << bitset<8>(calculate_tag(0b01010101)) << endl;
+	cout << "calculate_tag(0b11100011) = " << bitset<8>(calculate_tag(0b11100011)) << endl;
+}
 /******************************************************************************
  * Main Function for Testing
  *****************************************************************************/
 int main() {
-	test_history();
+	// test_history();
+	// test_fsm();
+	// test_power();
+	// test_log2();
+	test_get_bits();
+	// test_calculate_tag();
 
 	return 0;
 }
 
+/* Output:
+0x1230 N 0x1234
+0x87654 N 0x87658
+0x1230 N 0x1234
+0x87654 N 0x87658
+0x1230 N 0x1234
+0x87654 N 0x87658
+0x87654 N 0x87658
+0x10c N 0x110
+0x87654 N 0x87658
+flush_num: 9, br_num: 9, size: 134b
+*/
