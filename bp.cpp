@@ -250,7 +250,7 @@ int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize, unsigned f
 	// }
 
 	if (isGlobalTable) {
-		for (unsigned i = 0; i < btbSize; ++i) {
+		for (unsigned i = 0; i < FSM_VECTOR_MAX_SIZE; ++i) {
 			FSM &currentFSM = globalFSMVector[i];
 			currentFSM.set_fsmState(fsmState);
 			currentFSM.set_fsmSize(FSM_SIZE);
@@ -562,6 +562,7 @@ int _main() {
 }
 
 /* Output:
+shaked@SYsLegion-7i:~/projects/ComputerArchitectureHW1$ ./bp_main ./input_examples/example1.trc 
 0x1230 N 0x1234
 0x87654 N 0x87658
 0x1230 N 0x1234
@@ -571,5 +572,27 @@ int _main() {
 0x87654 N 0x87658
 0x10c N 0x110
 0x87654 N 0x87658
-flush_num: 9, br_num: 9, size: 134b
+flush_num: 4, br_num: 9, size: 134b
+shaked@SYsLegion-7i:~/projects/ComputerArchitectureHW1$ ./bp_main ./input_examples/example2.trc 
+0x1230 N 0x1234
+0x87654 N 0x87658
+0x1230 N 0x1234
+0x87654 T 0x45678
+0x1230 T 0x12300
+0x87654 T 0x45678
+0x87654 N 0x87658
+0x10c N 0x110
+0x87654 N 0x87658
+flush_num: 5, br_num: 9, size: 124b
+shaked@SYsLegion-7i:~/projects/ComputerArchitectureHW1$ ./bp_main ./input_examples/example3.trc 
+0x10 N 0x14
+0x10 T 0x20
+0x10 T 0x20
+0x10 T 0x20
+0x10 T 0x20
+0x14 N 0x18
+0x14 T 0x24
+0x14 T 0x24
+0x14 T 0x24
+0x14 T 0x24
 */

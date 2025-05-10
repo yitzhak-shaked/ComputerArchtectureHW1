@@ -14,6 +14,7 @@ int main(int argc, char **argv) {
 	 * Temporery addition for Debugging:
 	 */
 	// argv[1] = "input_examples/example3.trc";
+	// // argv[1] = "tests/example4.trc";
 	// argc = 2;
 	// printf("Running with %s\n", argv[1]);
 	 /**
