@@ -1,6 +1,6 @@
 /* 046267 Computer Architecture - HW #1                                      */
 /* This file should hold your implementation of the predictor simulator      */
-/* Athors: Shaked Yitzhak - 322704776, Idan Simon - TODO: Fill          */
+/* Athors: Shaked Yitzhak - 322704776, Idan Simon - 207784653		         */
 /******************************************************************************
  * Includes
  *****************************************************************************/
@@ -15,7 +15,7 @@ const unsigned FSM_SIZE = 4; // Size of the FSM
 const unsigned FSM_VECTOR_MAX_SIZE = 256; // Maximum size of the FSM
 const unsigned MAX_BTB_SIZE = 32;
 const unsigned MAX_HISTORY_SIZE = 8;
-const unsigned MAX_TAG_SIZE = 32;
+const unsigned MAX_TAG_SIZE = 30;
 
 /******************************************************************************
  * usings
@@ -112,6 +112,7 @@ class BTBEntry {
 private:
 	uint32_t tag;
 	uint32_t targetPc;
+	bool validBit;
 	History history;
 	FSM fsmVec[FSM_VECTOR_MAX_SIZE];
 
@@ -125,9 +126,12 @@ public:
 	uint32_t get_targetPc() const;
 	uint32_t get_history() const;
 	bool get_isTaken(int fsmIndex) const;
+	bool isValid() const { return this->validBit; }
 
 	void set_tag(uint32_t tag);
 	void set_targetPc(uint32_t targetPc);
+	void invalidate() { this->validBit = false; }
+	void validate() { this->validBit = true; }
 	// void set_fsmState(unsigned fsmState) { this->fsmVec.set_fsmState(fsmState); }
 	
 	// Functions
@@ -175,7 +179,7 @@ public:
  *****************************************************************************/
 BTB globalBTB = BTB(0, MAX_HISTORY_SIZE, MAX_TAG_SIZE, 2);
 History globalHistory = History(MAX_HISTORY_SIZE);
-FSM globalFSMVector[FSM_VECTOR_MAX_SIZE];  // TODO: Validate.
+FSM globalFSMVector[FSM_VECTOR_MAX_SIZE];
 unsigned gInitalFsmState = 2;
 bool gIsGlobalHist = false;
 bool gIsGlobalTable = false;
@@ -195,15 +199,10 @@ uint32_t get_bits(uint32_t value, unsigned start, unsigned end) {
 		cerr << "Error: get_bits recieved an invalid bit range" << endl;
 		return 0;
 	}
-	// printf("\nget_bits(%u, %u, %u)\n", value, start, end); // TODO: Remove
 	uint32_t mask;
 	mask = (1u << (end - start + 1u)) - 1u;
 	mask = mask << start;
 
-	
-	// printf("value: 0b%s\n", std::bitset<32>(value).to_string().c_str()); // TODO: Remove
-	// printf("Mask: 0b%s\n", std::bitset<32>(mask).to_string().c_str());
-	// printf("result: 0b%s\n", std::bitset<32>((value & mask) >> start).to_string().c_str());
 	return (value & mask) >> start;
 }
 
@@ -217,6 +216,9 @@ int log2(int x) {
 }
 
 uint32_t calculate_tag(uint32_t pc) {
+	if (globalBTB.get_tagSize() == 0) {
+		return 0;
+	}
 	unsigned start = 2 + log2(globalBTB.get_btbSize());
 	return get_bits(pc, start, start + globalBTB.get_tagSize() - 2);
 }
@@ -228,10 +230,10 @@ int power(int base, int exp) {
 	}
 	return result;
 }
+
  /*****************************************************************************
  * Target Functions
  *****************************************************************************/
-
 int BP_init(unsigned btbSize, unsigned historySize, unsigned tagSize, unsigned fsmState,
 			bool isGlobalHist, bool isGlobalTable, int Shared) {
 	// Initialize global variables
@@ -280,7 +282,8 @@ void BP_GetStats(SIM_stats *curStats) {
 	// Update the stats
 	curStats->flush_num = gFlushCounter;
 	curStats->br_num = gBranchCounter;
-	curStats->size = globalBTB.get_btbSize() * (log2(globalBTB.get_btbSize()) +  globalBTB.get_tagSize() + 30);
+	// curStats->size = globalBTB.get_btbSize() * (log2(globalBTB.get_btbSize()) +  globalBTB.get_tagSize() + 30);
+	curStats->size = globalBTB.get_btbSize() * (globalBTB.get_tagSize() + 30 + 1);
 	if (gIsGlobalHist) {
 		curStats->size += globalBTB.get_historySize();
 	} else {
@@ -298,6 +301,7 @@ void BP_GetStats(SIM_stats *curStats) {
  *****************************************************************************/
 BTBEntry::BTBEntry(uint32_t tag, uint32_t targetPc, unsigned historySize, unsigned initailFsmState)
 	: tag(tag), targetPc(targetPc), history(historySize) {
+	this->validBit = false;
 	for (unsigned i = 0; i < FSM_VECTOR_MAX_SIZE; ++i) {
 		this->fsmVec[i].set_fsmState(initailFsmState);
 	}
@@ -372,10 +376,10 @@ bool BTB::get_BTB_entry_prediction(uint32_t tag, uint32_t pc, uint32_t *dst) {
 
 	// If the entry exists, return its prediction
 	// TOASK: What if both tag and LSB bits are the same for two different branches?
-	if (entry.get_tag() == tag) {
+	if (entry.isValid() && entry.get_tag() == tag) {
 		bool isTaken;
 		int fsmIndex = entry.get_history();
-		if (gIsGlobalHist) {
+		if (gIsGlobalTable) {
 			switch (gXORMethod) {
 				case 0: // Not using XOR
 					break;
@@ -412,27 +416,28 @@ void BTB::update_BTB_entry(uint32_t tag, uint32_t pc, uint32_t targetPc, bool ta
 	BTBEntry &entry = btbEntries[get_bits(pc, 2, 2 + log2(btbSize) - 1)];
 	
 	// If the entry does not exists create a new one
-	if (entry.get_tag() != tag) {
+	if (entry.get_tag() != tag || !entry.isValid()) {
 		entry.recreate_entry(tag, targetPc);
+		entry.validate();
 	}
 	
 	// Update the FSM state
 	int fsmIndex = entry.get_history();
-	if (gIsGlobalHist) {
+	if (gIsGlobalTable) {
 		switch (gXORMethod) {
 			case 0: // Not using XOR
-			break;
+				break;
 			
 			case 1: // Using XOR on LSB (from the third bit)
-			fsmIndex ^= get_bits(pc, 2, 2 + this->get_historySize() - 1);
-			break;
+				fsmIndex ^= get_bits(pc, 2, 2 + this->get_historySize() - 1);
+				break;
 			
 			case 2: // Using XOR on mid (from the 17h bit)
-			fsmIndex ^= get_bits(pc, 16, 16 + this->get_historySize() - 1);
-			break;
+				fsmIndex ^= get_bits(pc, 16, 16 + this->get_historySize() - 1);
+				break;
 			
 			default:
-			cerr << "Invalid Shared value: " << gXORMethod << endl;
+				cerr << "Invalid Shared value: " << gXORMethod << endl;
 			break;
 		}
 	}
@@ -449,8 +454,6 @@ void BTB::update_BTB_entry(uint32_t tag, uint32_t pc, uint32_t targetPc, bool ta
 		entry.update_history(taken);
 	}
 }
-
-
 
 /******************************************************************************
  * Test Functions
@@ -547,6 +550,7 @@ void test_calculate_tag() {
 	cout << "calculate_tag(0b01010101) = " << bitset<8>(calculate_tag(0b01010101)) << endl;
 	cout << "calculate_tag(0b11100011) = " << bitset<8>(calculate_tag(0b11100011)) << endl;
 }
+
 /******************************************************************************
  * Main Function for Testing
  *****************************************************************************/
@@ -596,3 +600,15 @@ shaked@SYsLegion-7i:~/projects/ComputerArchitectureHW1$ ./bp_main ./input_exampl
 0x14 T 0x24
 0x14 T 0x24
 */
+/* For debugging from bp_main.c
+	/**
+	 * Temporery addition for Debugging:
+	 */
+	// argv[1] = "input_examples/example3.trc";
+	// argv[1] = "tests/example149.trc";
+	// argc = 2;
+	// printf("Running with %s\n", argv[1]);
+	 /**
+	  * TODO: Remove this part
+	  */
+// */
